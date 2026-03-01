@@ -1,0 +1,1 @@
+"""Morphogenesis プロパティ"""
