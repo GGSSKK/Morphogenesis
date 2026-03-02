@@ -9,7 +9,7 @@
 6. 付属肢: 体節の morphogen > gene.appendage_threshold で発生（scale_x とは脱結合）
 7. 付属肢チェーン: morphogen が continuation_threshold 未満で成長停止
 """
-from .types import Gene, Rule, Segment
+from .types import Gene, Rule, Segment, SCALE_MAX
 from .condition import evaluate
 from .action import execute
 
@@ -71,13 +71,32 @@ def _update_morphogen(seg: Segment, gene: Gene,
     seg.morphogen = max(0.0, min(morphogen_ceiling, new_morphogen))
 
 
+def _determine_head_material(gene: Gene, head_scale: float, head_morphogen: float,
+                              ctx_n1_scale: float, ctx_n2_scale: float,
+                              ctx_n1_morphogen: float, ctx_n2_morphogen: float,
+                              scale_max: float = SCALE_MAX) -> str:
+    """親コンテキストのルール適用から付属肢ヘッドのマテリアルを決定
+
+    一時的な Segment にルールを適用し、最終的な material のみ返す。
+    scale_x/terminated の変更は破棄（material 決定のみが目的）。
+    """
+    probe = Segment(index=0, scale_x=head_scale, morphogen=head_morphogen)
+    for rule in gene.rules:
+        if _eval_rule_condition(rule, ctx_n1_scale, ctx_n2_scale,
+                                ctx_n1_morphogen, ctx_n2_morphogen):
+            execute(rule.action, probe, count=0,
+                    scale_max=scale_max, terminate_threshold=5)
+    return probe.material
+
+
 def build_appendage_chain(gene: Gene, head_scale: float,
                           max_segments: int = 15,
                           scale_max: float = None,
-                          parent_scale: float = 1.0,
-                          parent_prev_scale: float = 1.0,
-                          parent_morphogen: float = 1.0,
-                          parent_prev_morphogen: float = 1.0) -> list[Segment]:
+                          ctx_n1_scale: float = 1.0,
+                          ctx_n2_scale: float = 1.0,
+                          ctx_n1_morphogen: float = 1.0,
+                          ctx_n2_morphogen: float = 1.0,
+                          init_morphogen: float = 1.0) -> list[Segment]:
     """付属肢チェーン生成（独立モルフォゲンで自然停止）
 
     Args:
@@ -85,31 +104,29 @@ def build_appendage_chain(gene: Gene, head_scale: float,
         head_scale: 付属肢チェーンの先頭体節のscale_x
         max_segments: 付属肢チェーンの最大体節数（デフォルト15）
         scale_max: スケール上限（None=デフォルトのSCALE_MAX使用）
-        parent_scale: 親体節のscale_x（head material決定用）
-        parent_prev_scale: 親のN-1のscale_x（head material決定用）
-        parent_morphogen: 親体節のmorphogen（付属肢チェーンの初期morphogen）
-        parent_prev_morphogen: 親のN-1のmorphogen（head条件評価用）
+        ctx_n1_scale: 主チェーン N-1 の scale_x（head条件評価用）
+        ctx_n2_scale: 主チェーン N-2 の scale_x（head条件評価用）
+        ctx_n1_morphogen: 主チェーン N-1 の morphogen（head条件評価用）
+        ctx_n2_morphogen: 主チェーン N-2 の morphogen（head条件評価用）
+        init_morphogen: 付属肢チェーンの初期 morphogen
 
     Returns:
         付属肢チェーンの体節リスト（最低1体節）
     """
-    if not gene.rules:
-        return [Segment(index=0, scale_x=head_scale, morphogen=parent_morphogen, pos_x=0.0)]
+    resolved_scale_max = scale_max if scale_max is not None else SCALE_MAX
 
-    # Head: 親体節パラメータからルール駆動でmaterial決定
-    head = Segment(index=0, scale_x=head_scale, morphogen=parent_morphogen, pos_x=0.0)
-    effective_max = scale_max if scale_max is not None else None
-    for rule in gene.rules:
-        if _eval_rule_condition(rule, parent_scale, parent_prev_scale,
-                                parent_morphogen, parent_prev_morphogen):
-            if effective_max is not None:
-                execute(rule.action, head, count=0,
-                        scale_max=effective_max, terminate_threshold=5)
-            else:
-                execute(rule.action, head, count=0, terminate_threshold=5)
-    # ルールによるscale変更をリセット（開始スケールを維持）
-    head.scale_x = head_scale
-    head.terminated = False  # TERMINATEもリセット
+    if not gene.rules:
+        return [Segment(index=0, scale_x=head_scale, morphogen=init_morphogen, pos_x=0.0)]
+
+    # Head: 親コンテキストからルール駆動でmaterial決定
+    material = _determine_head_material(
+        gene, head_scale, init_morphogen,
+        ctx_n1_scale, ctx_n2_scale,
+        ctx_n1_morphogen, ctx_n2_morphogen,
+        scale_max=resolved_scale_max,
+    )
+    head = Segment(index=0, scale_x=head_scale, morphogen=init_morphogen,
+                   pos_x=0.0, material=material)
 
     segments: list[Segment] = [head]
 
@@ -136,12 +153,8 @@ def build_appendage_chain(gene: Gene, head_scale: float,
         for rule in gene.rules:
             if _eval_rule_condition(rule, n1.scale_x, n2.scale_x,
                                     n1.morphogen, n2.morphogen):
-                if effective_max is not None:
-                    execute(rule.action, seg, len(segments),
-                            scale_max=effective_max, terminate_threshold=5)
-                else:
-                    execute(rule.action, seg, len(segments),
-                            terminate_threshold=5)
+                execute(rule.action, seg, len(segments),
+                        scale_max=resolved_scale_max, terminate_threshold=5)
 
         # morphogen 更新（付属肢チェーン: 乗算的 + 上限なし → 各ステップで一定比率変化）
         _update_morphogen(seg, gene, n1.scale_x, n2.scale_x,
@@ -183,6 +196,8 @@ def build_chain(gene: Gene, max_segments: int = 30, scale_max: float = None,
     if not gene.rules:
         return [Segment(index=0, scale_x=1.0, pos_x=0.0)]
 
+    resolved_scale_max = scale_max if scale_max is not None else SCALE_MAX
+
     segments: list[Segment] = [Segment(index=0, scale_x=1.0, morphogen=1.0, pos_x=0.0)]
 
     for i in range(1, max_segments):
@@ -200,14 +215,10 @@ def build_chain(gene: Gene, max_segments: int = 30, scale_max: float = None,
         )
 
         # 全ルールを順次適用（M フラグで scale_x or morphogen を条件に使用）
-        effective_max = scale_max if scale_max is not None else None
         for rule in gene.rules:
             if _eval_rule_condition(rule, n1.scale_x, n2.scale_x,
                                     n1.morphogen, n2.morphogen):
-                if effective_max is not None:
-                    execute(rule.action, seg, len(segments), scale_max=effective_max)
-                else:
-                    execute(rule.action, seg, len(segments))
+                execute(rule.action, seg, len(segments), scale_max=resolved_scale_max)
 
         # morphogen 更新（発火ルールの T/H ビットに基づく）
         _update_morphogen(seg, gene, n1.scale_x, n2.scale_x,
@@ -230,18 +241,18 @@ def build_chain(gene: Gene, max_segments: int = 30, scale_max: float = None,
     # 付属肢チェーン構築
     for idx, seg in enumerate(segments):
         if seg.has_appendage:
-            # 親のN-1を取得（head material/条件駆動用）
-            parent_prev = segments[idx - 1] if idx >= 1 else segments[0]
-            # 親のN-2を取得
-            parent_prev2 = segments[idx - 2] if idx >= 2 else segments[0]
+            # 主チェーン N-1, N-2 を取得（head条件評価用）
+            parent_n1 = segments[idx - 1] if idx >= 1 else segments[0]
+            parent_n2 = segments[idx - 2] if idx >= 2 else segments[0]
             seg.appendage_chain = build_appendage_chain(
                 gene, head_scale=seg.appendage_scale,
                 max_segments=max_appendage_segments,
                 scale_max=scale_max,
-                parent_scale=parent_prev.scale_x,
-                parent_prev_scale=parent_prev2.scale_x,
-                parent_morphogen=seg.morphogen,
-                parent_prev_morphogen=parent_prev.morphogen,
+                ctx_n1_scale=parent_n1.scale_x,
+                ctx_n2_scale=parent_n2.scale_x,
+                ctx_n1_morphogen=parent_n1.morphogen,
+                ctx_n2_morphogen=parent_n2.morphogen,
+                init_morphogen=seg.morphogen,
             )
 
     return segments

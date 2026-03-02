@@ -592,7 +592,7 @@ class TestAppendageChain:
         )
         app_chain = build_appendage_chain(gene, head_scale=1.0,
                                            max_segments=10, scale_max=3.0,
-                                           parent_morphogen=2.0)
+                                           init_morphogen=2.0)
         for seg in app_chain:
             assert seg.scale_x <= 3.0 + 0.01
 

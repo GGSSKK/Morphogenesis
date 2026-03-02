@@ -28,6 +28,31 @@ _NEEDS_ROTATION = {"SPHERE", "CYLINDER", "CONE"}
 
 TREE_NAME = "Morpho_GN"
 
+# --- 付属肢サイズパラメータ ---
+_APP_MAX_LENGTH_MULT = 100.0      # morphogen 最大時の長さ倍率
+_APP_MAX_THICK_MULT = 5.0         # morphogen 最大時の太さ倍率
+_APP_MORPHOGEN_REF = 1.5          # この morphogen 値で最大長に到達
+_APP_BASE_LENGTH_RATIO = 0.02     # 親径に対する基本長さ比率
+_APP_BASE_THICK_RATIO = 0.01      # 親径に対する基本太さ比率
+_APP_BASE_LENGTH_FLOOR = 0.04     # 基本長さの最小値
+_APP_BASE_THICK_FLOOR = 0.02      # 基本太さの最小値
+
+
+def _create_rotated_mesh(tree, mesh_type, mesh_creator, rotation_euler, y_offset):
+    """メッシュプリミティブ生成 + 非CUBE型は指定角度で回転"""
+    _, mesh_out = mesh_creator(tree, (-600, y_offset))
+    if mesh_type in _NEEDS_ROTATION:
+        _, rot_vec = gn.combine_xyz(
+            tree, x=rotation_euler[0], y=rotation_euler[1], z=rotation_euler[2],
+            location=(-400, y_offset - 50))
+        rot_node = gn.add_node(tree, "FunctionNodeEulerToRotation",
+                                location=(-300, y_offset - 50))
+        gn.link(tree, rot_vec, rot_node.inputs["Euler"])
+        _, mesh_out = gn.transform(
+            tree, mesh_out, rotation=rot_node.outputs["Rotation"],
+            location=(-200, y_offset))
+    return mesh_out
+
 
 def _compute_positions(chain: list[Segment], scale_axis: str,
                        uniform_scale: float) -> list[float]:
@@ -99,20 +124,8 @@ def build_gn_tree(chain: list[Segment], mesh_type: str = "CUBE",
     for i, seg in enumerate(chain):
         y_offset = -i * 200  # ノードを縦に並べる
 
-        # メッシュプリミティブ生成
-        _, mesh_out = mesh_creator(tree, (-600, y_offset))
-
-        # 球/円柱/円錐: 極がX軸（関節方向）を向くようにY軸90°回転
-        if mesh_type in _NEEDS_ROTATION:
-            _, rot_vec = gn.combine_xyz(
-                tree, x=_ROT_Y_90[0], y=_ROT_Y_90[1], z=_ROT_Y_90[2],
-                location=(-400, y_offset - 50))
-            rot_node = gn.add_node(tree, "FunctionNodeEulerToRotation",
-                                    location=(-300, y_offset - 50))
-            gn.link(tree, rot_vec, rot_node.inputs["Euler"])
-            _, mesh_out = gn.transform(
-                tree, mesh_out, rotation=rot_node.outputs["Rotation"],
-                location=(-200, y_offset))
+        # メッシュプリミティブ生成（非CUBE型は回転付き）
+        mesh_out = _create_rotated_mesh(tree, mesh_type, mesh_creator, _ROT_Y_90, y_offset)
 
         # スケールベクター: scale_x(乗算的) × morphogen(加算的) の積で視覚サイズ決定
         # scale_x: アクションルール駆動（指数的変化）
@@ -168,49 +181,32 @@ def build_gn_tree(chain: list[Segment], mesh_type: str = "CUBE",
             # 付属肢寸法: morphogen 絶対値で長さ決定（チェーン内正規化は廃止）
             # 低 morphogen → 短い節、高 morphogen → 長い節
             # 基本サイズは親体節の Y 直径に比例（親のサイズが付属肢全体のスケールを決定）
-            MAX_LENGTH_MULT = 100.0   # 最大100倍
-            MAX_THICK_MULT = 5.0      # 太さは5倍まで
-            MORPHOGEN_LENGTH_REF = 1.5  # この morphogen 値で最大長に到達
-
-            # 基本サイズ: 親体節の Y 直径に比例
-            base_seg_length = max(0.04, parent_y_diameter * 0.02)
-            base_seg_thick = max(0.02, parent_y_diameter * 0.01)
+            base_seg_length = max(_APP_BASE_LENGTH_FLOOR, parent_y_diameter * _APP_BASE_LENGTH_RATIO)
+            base_seg_thick = max(_APP_BASE_THICK_FLOOR, parent_y_diameter * _APP_BASE_THICK_RATIO)
 
             for j, app_seg in enumerate(seg.appendage_chain):
                 app_y_offset = app_node_base_y
                 app_node_base_y -= 200
 
                 # morphogen 絶対値 → [0, 1] にクランプ（正規化ではない）
-                morph_t = min(app_seg.morphogen / MORPHOGEN_LENGTH_REF, 1.0)
+                morph_t = min(app_seg.morphogen / _APP_MORPHOGEN_REF, 1.0)
                 # 二乗カーブ: 低 morphogen を圧縮し、高 morphogen の差を強調
                 morph_t_sq = morph_t * morph_t
 
-                # 節の長さ: base × [1, MAX_LENGTH_MULT]
-                length_mult = 1.0 + morph_t_sq * (MAX_LENGTH_MULT - 1.0)
+                # 節の長さ: base × [1, _APP_MAX_LENGTH_MULT]
+                length_mult = 1.0 + morph_t_sq * (_APP_MAX_LENGTH_MULT - 1.0)
                 app_s = base_seg_length * length_mult
 
-                # 節の太さ: base × [1, MAX_THICK_MULT]
-                thick_mult = 1.0 + morph_t * (MAX_THICK_MULT - 1.0)
+                # 節の太さ: base × [1, _APP_MAX_THICK_MULT]
+                thick_mult = 1.0 + morph_t * (_APP_MAX_THICK_MULT - 1.0)
                 app_uniform = base_seg_thick * thick_mult
 
                 # Y座標: 節が自分の長さ分の空間を占有（端と端で隣接）
                 y_cursor += sign * (app_s / 2.0)
                 app_y = y_cursor
 
-                # メッシュプリミティブ生成
-                _, app_mesh = mesh_creator(tree, (-600, app_y_offset))
-
-                # CUBE以外: X軸90°回転（極/軸がY方向を向く）
-                if mesh_type in _NEEDS_ROTATION:
-                    _, app_rot_vec = gn.combine_xyz(
-                        tree, x=_ROT_X_90[0], y=_ROT_X_90[1], z=_ROT_X_90[2],
-                        location=(-400, app_y_offset - 50))
-                    app_rot_node = gn.add_node(tree, "FunctionNodeEulerToRotation",
-                                               location=(-300, app_y_offset - 50))
-                    gn.link(tree, app_rot_vec, app_rot_node.inputs["Euler"])
-                    _, app_mesh = gn.transform(
-                        tree, app_mesh, rotation=app_rot_node.outputs["Rotation"],
-                        location=(-200, app_y_offset))
+                # メッシュプリミティブ生成（非CUBE型は回転付き）
+                app_mesh = _create_rotated_mesh(tree, mesh_type, mesh_creator, _ROT_X_90, app_y_offset)
 
                 # 非均一スケール: Y軸にapp_s（長さ=1〜100倍）、X/Z軸にapp_uniform（太さ=1〜5倍）
                 _, app_scale_vec = gn.combine_xyz(
