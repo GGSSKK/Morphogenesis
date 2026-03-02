@@ -175,13 +175,14 @@ class TestN2Fallback:
         """index=2 生成時は N-2 = segments[0]（フォールバックではなく実際の値）
 
         この場合 N-1=segments[1], N-2=segments[0]
+        MATERIAL_B は "default"（白）に戻す。
         """
         gene = Gene(rules=[Rule(ConditionCode.N1_SCALE_EQ_N2, ActionCode.MATERIAL_B)])
         chain = build_chain(gene, max_segments=4)
-        # seg[1]: n1=head(1.0), n2=head(1.0) → EQ → True → MATERIAL_B
-        # seg[2]: n1=seg[1](1.0), n2=seg[0](1.0) → EQ → True → MATERIAL_B
-        assert chain[1].material == "B"
-        assert chain[2].material == "B"
+        # seg[1]: n1=head(1.0), n2=head(1.0) → EQ → True → MATERIAL_B → "default"
+        # seg[2]: n1=seg[1](1.0), n2=seg[0](1.0) → EQ → True → MATERIAL_B → "default"
+        assert chain[1].material == "default"
+        assert chain[2].material == "default"
 
     def test_n1_lt_n2_with_fallback(self):
         """N1_SCALE_LT_N2: n1=head(1.0), n2=head(1.0) → 1.0 < 0.99 → False"""
@@ -230,42 +231,41 @@ class TestMaterialPropagation:
             assert seg.material == "A"
 
     def test_material_can_be_overwritten(self):
-        """MATERIAL_B が MATERIAL_A を上書きする
+        """MATERIAL_A → MATERIAL_B で白に戻る
 
-        ルール順: MATERIAL_A → MATERIAL_B（後勝ち）
+        ルール順: MATERIAL_A("A") → MATERIAL_B("default")
         """
         gene = Gene(rules=[
             Rule(ConditionCode.ALWAYS_TRUE, ActionCode.MATERIAL_A),
             Rule(ConditionCode.ALWAYS_TRUE, ActionCode.MATERIAL_B),
         ])
         chain = build_chain(gene, max_segments=3)
-        # 全体節に MATERIAL_A → MATERIAL_B の順で適用 → 最終的に "B"
+        # 全体節に MATERIAL_A → MATERIAL_B の順で適用 → 最終は "default"
         for seg in chain[1:]:
-            assert seg.material == "B"
+            assert seg.material == "default"
 
     def test_conditional_material_switch(self):
         """条件付きマテリアル切替
 
         ルール1: ALWAYS_TRUE + SCALE_DOWN_SMALL → 0.9 ずつ縮小
-        ルール2: N1_SCALE_LT_HALF + MATERIAL_B → scale < 0.49 で MATERIAL_B
+        ルール2: N1_SCALE_LT_HALF + MATERIAL_A → scale < 0.49 で "A"
         """
         gene = Gene(rules=[
             Rule(ConditionCode.ALWAYS_TRUE, ActionCode.SCALE_DOWN_SMALL),
-            Rule(ConditionCode.N1_SCALE_LT_HALF, ActionCode.MATERIAL_B),
+            Rule(ConditionCode.N1_SCALE_LT_HALF, ActionCode.MATERIAL_A),
         ])
         chain = build_chain(gene, max_segments=15)
         # scale は 1.0 → 0.9 → 0.81 → 0.729 → 0.656 → 0.590 → 0.531 → 0.478 → ...
         # 0.478 < 0.49 → True
-        # 最初の数体節は "default"、途中から "B" に切り替わるはず
         found_default = False
-        found_b = False
+        found_a = False
         for seg in chain[1:]:
             if seg.material == "default":
                 found_default = True
-            elif seg.material == "B":
-                found_b = True
+            elif seg.material == "A":
+                found_a = True
         assert found_default, "初期は default マテリアルであるべき"
-        assert found_b, "スケールが 0.5 未満になったら B に切り替わるべき"
+        assert found_a, "スケールが 0.5 未満になったら A に切り替わるべき"
 
 
 # ============================================================

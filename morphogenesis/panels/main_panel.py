@@ -22,6 +22,7 @@ class MORPHO_PT_MainPanel(bpy.types.Panel):
         # パラメータ
         layout.prop(props, "rule_count")
         layout.prop(props, "max_segments")
+        layout.prop(props, "max_appendage_segments")
         layout.prop(props, "mesh_type")
 
         layout.separator()
@@ -57,6 +58,7 @@ class MORPHO_PT_MainPanel(bpy.types.Panel):
             col.label(text=f"Gene: {preview}")
 
         box.label(text=f"Segments: {props.segment_count}")
+        box.label(text=f"Appendages: {props.appendage_count}")
 
         layout.separator()
 

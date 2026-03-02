@@ -15,7 +15,7 @@ def _ensure_material_slots(obj):
 
     GN SetMaterial で使うマテリアルを事前にスロットに追加しておく。
     """
-    for mat_key in ("default", "A", "B"):
+    for mat_key in ("default", "A"):
         mat = get_or_create_material(mat_key)
         # 既にスロットにあるか確認
         found = False
@@ -58,6 +58,7 @@ class MORPHO_OT_Generate(bpy.types.Operator):
             gene,
             max_segments=props.max_segments,
             scale_max=props.segment_max_scale,
+            max_appendage_segments=props.max_appendage_segments,
         )
 
         # GNツリー構築（軸選択と均一スケールを渡す）
@@ -105,6 +106,9 @@ class MORPHO_OT_Generate(bpy.types.Operator):
         # プロパティ更新
         props.gene_string = gene.to_string()
         props.segment_count = len(chain)
+        props.appendage_count = sum(
+            len(seg.appendage_chain) for seg in chain if seg.has_appendage
+        )
 
         # ビューポート更新
         context.view_layer.update()

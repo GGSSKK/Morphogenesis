@@ -87,6 +87,15 @@ class MorphoProperties(bpy.types.PropertyGroup):
         update=_on_param_change,
     )
 
+    max_appendage_segments: IntProperty(
+        name="Max Appendage Segs",
+        description="付属肢チェーンの最大体節数",
+        default=15,
+        min=1,
+        max=30,
+        update=_on_param_change,
+    )
+
     gene_string: StringProperty(
         name="Gene",
         description="現在の遺伝子文字列（自動生成）",
@@ -96,5 +105,11 @@ class MorphoProperties(bpy.types.PropertyGroup):
     segment_count: IntProperty(
         name="Segments",
         description="生成された体節数",
+        default=0,
+    )
+
+    appendage_count: IntProperty(
+        name="Appendages",
+        description="付属肢のある体節数",
         default=0,
     )

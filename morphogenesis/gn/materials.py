@@ -4,17 +4,12 @@ import bpy
 # マテリアル定義
 MATERIAL_CONFIGS = {
     "default": {
-        "base_color": (0.9, 0.9, 0.9, 1.0),  # 白
+        "base_color": (1.0, 1.0, 1.0, 1.0),  # 白
         "metallic": 0.1,
         "roughness": 0.5,
     },
     "A": {
         "base_color": (0.05, 0.05, 0.05, 1.0),  # 黒
-        "metallic": 0.1,
-        "roughness": 0.5,
-    },
-    "B": {
-        "base_color": (0.4, 0.4, 0.4, 1.0),  # グレー
         "metallic": 0.1,
         "roughness": 0.5,
     },

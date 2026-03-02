@@ -36,15 +36,19 @@ def register():
         MORPHO_OT_Reload,
         MORPHO_PT_MainPanel,
     )
+
+    # 再インストール時に既存クラスが残っている場合を安全に処理
+    for cls in reversed(classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            pass
+    if hasattr(bpy.types.Scene, "morpho_props"):
+        del bpy.types.Scene.morpho_props
+
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.morpho_props = bpy.props.PointerProperty(type=MorphoProperties)
-
-    # マテリアルを事前作成（白と黒）
-    from .gn.materials import get_or_create_material
-    get_or_create_material("default")  # 白
-    get_or_create_material("A")        # 黒
-    get_or_create_material("B")        # グレー
 
 
 def unregister():

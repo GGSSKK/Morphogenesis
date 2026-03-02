@@ -7,7 +7,8 @@ from .types import ActionCode, Segment, SCALE_MIN, SCALE_MAX
 
 
 def execute(code: ActionCode, segment: Segment, count: int,
-            scale_max: float = SCALE_MAX) -> Segment:
+            scale_max: float = SCALE_MAX,
+            terminate_threshold: int = 15) -> Segment:
     """アクションを体節に適用
 
     Args:
@@ -15,6 +16,7 @@ def execute(code: ActionCode, segment: Segment, count: int,
         segment: 現在の体節（in-place変更される）
         count: 現在の体節数（Terminate判定用）
         scale_max: X軸スケール上限（デフォルト=SCALE_MAX）
+        terminate_threshold: TERMINATE発動閾値（デフォルト=15、付属肢用に引き下げ可能）
 
     Returns:
         変更後のSegment（引数と同一オブジェクト）
@@ -40,9 +42,8 @@ def execute(code: ActionCode, segment: Segment, count: int,
     elif code == ActionCode.MATERIAL_A:
         segment.material = "A"
     elif code == ActionCode.MATERIAL_B:
-        segment.material = "B"
+        segment.material = "default"  # 白に戻す（MATERIAL_A=黒との対）
     elif code == ActionCode.TERMINATE:
-        # 体節数が15以上の場合のみ終了フラグを立てる
-        if count >= 15:
+        if count >= terminate_threshold:
             segment.terminated = True
     return segment

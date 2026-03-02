@@ -169,22 +169,22 @@ class TestMaterialA:
 
 
 # ============================================================
-# MATERIAL_B (code=6)
+# MATERIAL_B (code=6): "default"（白）に戻す
 # ============================================================
 class TestMaterialB:
-    """マテリアルB設定のテスト"""
+    """マテリアルB設定のテスト — "default"（白）"""
 
     def test_set_material(self):
-        """マテリアルが "B" に設定される"""
-        seg = Segment(index=1, scale_x=1.0, material="default")
-        execute(ActionCode.MATERIAL_B, seg, 5)
-        assert seg.material == "B"
-
-    def test_overwrite_existing(self):
-        """既存マテリアル "A" を "B" に上書き"""
+        """MATERIAL_B は "default"（白）を割り当てる"""
         seg = Segment(index=1, scale_x=1.0, material="A")
         execute(ActionCode.MATERIAL_B, seg, 5)
-        assert seg.material == "B"
+        assert seg.material == "default"
+
+    def test_overwrite_existing(self):
+        """既存マテリアル "A" を "default" に上書き"""
+        seg = Segment(index=1, scale_x=1.0, material="A")
+        execute(ActionCode.MATERIAL_B, seg, 5)
+        assert seg.material == "default"
 
 
 # ============================================================
@@ -223,6 +223,18 @@ class TestTerminate:
         execute(ActionCode.TERMINATE, seg, 15)
         assert seg.scale_x == 3.0
         assert seg.terminated is True
+
+    def test_custom_terminate_threshold(self):
+        """terminate_threshold 引数でカスタム閾値"""
+        seg = Segment(index=5, scale_x=1.0)
+        execute(ActionCode.TERMINATE, seg, 5, terminate_threshold=5)
+        assert seg.terminated is True
+
+    def test_custom_terminate_threshold_below(self):
+        """terminate_threshold 未満 → terminated=False"""
+        seg = Segment(index=4, scale_x=1.0)
+        execute(ActionCode.TERMINATE, seg, 4, terminate_threshold=5)
+        assert seg.terminated is False
 
 
 # ============================================================
